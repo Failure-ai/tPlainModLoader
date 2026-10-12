@@ -26,5 +26,7 @@ namespace tContentPatch
         public virtual void NewNPCPostfix(int __result, IEntitySource source,
             int X, int Y, int Type, int Start, float ai0, float ai1, float ai2, float ai3, int Target)
         { }
+        /// <summary/>
+        public virtual void UpdateNPC_BuffSetFlagsPostfix(NPC This, bool lowerBuffTime) { }
     }
 }

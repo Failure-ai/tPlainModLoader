@@ -72,5 +72,7 @@ namespace tContentPatch
         public virtual void ApplyEquipFunctionalPostfix(Player This, int itemSlot, Item currentItem) { }
         /// <summary/>
         public virtual void ApplyEquipVanityPostfix(Player This, int itemSlot, Item currentItem) { }
+        /// <summary/>
+        public virtual void UpdateBuffsPostfix(Player This, int i) { }
     }
 }

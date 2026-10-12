@@ -159,5 +159,12 @@ namespace tContentPatch.ModPatch
         {
             mod.ForTry(item => item.ApplyEquipVanityPostfix(__instance, itemSlot, currentItem));
         }
+
+        [HarmonyPatch("UpdateBuffs")]
+        [HarmonyPostfix]
+        public static void UpdateBuffsPostfix(Player __instance, int i)
+        {
+            mod.ForTry(item => item.UpdateBuffsPostfix(__instance, i));
+        }
     }
 }

@@ -48,5 +48,12 @@ namespace tContentPatch.ModPatch
             mod.ForTry(item => item.NewNPCPostfix(__result, source,
                 X, Y, Type, Start, ai0, ai1, ai2, ai3, Target));
         }
+
+        [HarmonyPatch("UpdateNPC_BuffSetFlags")]
+        [HarmonyPostfix]
+        public static void UpdateNPC_BuffSetFlagsPostfix(NPC __instance, bool lowerBuffTime)
+        {
+            mod.ForTry(item => item.UpdateNPC_BuffSetFlagsPostfix(__instance, lowerBuffTime));
+        }
     }
 }
