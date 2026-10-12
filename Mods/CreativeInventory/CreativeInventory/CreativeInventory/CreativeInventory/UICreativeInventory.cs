@@ -1,6 +1,7 @@
 ﻿using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using System;
+using System.Collections.Generic;
 using tContentPatch.Content.UI;
 using Terraria;
 using Terraria.GameContent.UI.Elements;
@@ -19,6 +20,10 @@ namespace CreativeInventory.CreativeInventory
         //
         protected Terraria.UI.UIState panel_row1 = null;//搜索框
         protected UITextBox panel_row1_tb = null;
+        protected UIStackPanel panel_row1_sp = null;//搜索维度的开关
+        protected UISearchSwitch panel_row1_sw_tile = null;//按图格id搜索
+        protected UISearchSwitch panel_row1_sw_buff = null;//按buffid搜索
+        protected UISearchSwitch panel_row1_sw_proj = null;//按弹幕id搜索
         //
         protected UIPanel panel_row2 = null;//筛选
         protected UIStackPanel panel_row2_sp = null;
@@ -37,6 +42,10 @@ namespace CreativeInventory.CreativeInventory
             panel_rows = new UIStackPanel();
             panel_row1 = new Terraria.UI.UIState();
             panel_row1_tb = new UITextBox("搜索物品");
+            panel_row1_sp = new UIStackPanel();
+            panel_row1_sw_tile = new UISearchSwitch("图格");
+            panel_row1_sw_buff = new UISearchSwitch("Buff");
+            panel_row1_sw_proj = new UISearchSwitch("弹幕");
             panel_row2 = new UIPanel();
             panel_row2_sp = new UIStackPanel();
             panel_row2_sp_row1 = new UIStackPanel();
@@ -52,12 +61,29 @@ namespace CreativeInventory.CreativeInventory
             panel_row1_tb.Width.Set(150, 0);
             panel_row1_tb.Height.Set(30, 0);
             panel_row1_tb.Left.Set(-panel_row1_tb.Width.Pixels, 1);
+            panel_row1_tb.VAlign = 0.5f;
             panel_row1_tb.Text_MaxLength = 8;
             panel_row1_tb.OnTextChanged += (e) =>
             {
                 Search_Text_cd = (int)((1 / 16f) * 250);
                 Search_Text_new = e;
             };
+
+            panel_row1_sp.Horizontal = true;
+            panel_row1_sp.ItemMargin = 6;
+            panel_row1_sp.Width.Set(80 * 3 + 6 * 2, 0);//80是一个开关的宽度, 6是间距
+            panel_row1_sp.Height.Set(20, 0);
+            panel_row1_sp.VAlign = 0.5f;
+            //贴着搜索框的左边
+            panel_row1_sp.Left.Set(-panel_row1_tb.Width.Pixels - panel_row1_sp.Width.Pixels - 10, 1);
+
+            Action<bool> sw_update = v =>
+            {
+                if (Search_Text != null && Search_Text.Length > 0) update_itemUI();
+            };
+            panel_row1_sw_tile.OnValUpdate += sw_update;
+            panel_row1_sw_buff.OnValUpdate += sw_update;
+            panel_row1_sw_proj.OnValUpdate += sw_update;
 
             panel_row2.Height.Set(40 + 5 + 5, 0);
             panel_row2.MarginTop = 2;
@@ -88,6 +114,10 @@ namespace CreativeInventory.CreativeInventory
             panel_rows.Append(panel_row1);
             panel_rows.Append(panel_row2);
             panel_row1.Append(panel_row1_tb);
+            panel_row1.Append(panel_row1_sp);
+            panel_row1_sp.Append(panel_row1_sw_tile);
+            panel_row1_sp.Append(panel_row1_sw_buff);
+            panel_row1_sp.Append(panel_row1_sw_proj);
             panel_row2.Append(panel_row2_sp);
             panel_row2_sp.Append(panel_row2_sp_row1);
             panel_row2_sp.Append(panel_row2_sp_row2);
@@ -211,6 +241,14 @@ namespace CreativeInventory.CreativeInventory
 
             if (itemsID == null) return;
 
+            List<Item> items = new List<Item>();
+
+            int sid = 0;
+            bool is_num = Search_Text != null && Search_Text.Length > 0 && int.TryParse(Search_Text, out sid) && sid > 0;
+            bool hit_tile = false;
+            bool hit_buff = false;
+            bool hit_proj = false;
+
             itemsID.for_ItemsAll((i) =>
             {
                 if (i >= ModLinkage.ModExtenContent.ItemCount) return;
@@ -218,15 +256,69 @@ namespace CreativeInventory.CreativeInventory
                 item.SetDefaults(i);
                 if (item.type < 1 || item.type >= ModLinkage.ModExtenContent.ItemCount) return;
 
-                //根据搜索文本筛选
-                if (Search_Text != null && Search_Text.Length > 0)
+                //各维度有没有命中
+                if (is_num)
                 {
-                    if (!searchItem(item.Name, Search_Text)) return;
+                    if (panel_row1_sw_tile.GetVal() && match_tile(item, sid)) hit_tile = true;
+                    if (panel_row1_sw_buff.GetVal() && match_buff(item, sid)) hit_buff = true;
+                    if (panel_row1_sw_proj.GetVal() && match_proj(item, sid)) hit_proj = true;
                 }
 
-                UIItemGrid it = new UIItemGrid(item, Terraria.UI.ItemSlot.Context.CreativeInfinite);
-                panel_items_wp.Append(it);
+                //根据搜索文本筛选
+                if (search_rank(item) < 0) return;
+
+                items.Add(item);
             });
+
+            //越匹配id的排越前, 只有名字匹配的排最后
+            if (Search_Text != null && Search_Text.Length > 0)
+            {
+                items.Sort((a, b) =>
+                {
+                    int ra = search_rank(a);
+                    int rb = search_rank(b);
+                    if (ra != rb) return ra.CompareTo(rb);
+
+                    return a.type.CompareTo(b.type);
+                });
+            }
+
+            //开了开关却一条都没命中的维度, 提示占满第一行, 物品从第二行开始
+            string dims = null;
+
+            if (is_num)
+            {
+                if (panel_row1_sw_tile.GetVal() && !hit_tile) dims += "图格、";
+                if (panel_row1_sw_buff.GetVal() && !hit_buff) dims += "Buff、";
+                if (panel_row1_sw_proj.GetVal() && !hit_proj) dims += "弹幕、";
+            }
+
+            if (dims != null)
+            {
+                Terraria.UI.UIElement row = new Terraria.UI.UIElement();
+                row.Width.Set(10000, 0);//宽到放不下第二个元素, 物品就被挤到下一行
+                row.Height.Set(32, 0);
+
+                UIText ui_dims = new UIText(dims.Substring(0, dims.Length - 1) + "未找到（或许需要你点击全部列表）", 1.2f);
+                ui_dims.TextColor = Color.Gray;
+                ui_dims.VAlign = 0.5f;
+                row.Append(ui_dims);
+
+                panel_items_wp.Append(row);
+            }
+
+            foreach (Item item in items)
+            {
+                panel_items_wp.Append(new UIItemGrid(item, Terraria.UI.ItemSlot.Context.CreativeInfinite));
+            }
+
+            //搜不到东西时在第一格位置提示
+            if (dims == null && items.Count < 1 && Search_Text != null && Search_Text.Length > 0)
+            {
+                UIText ui_none = new UIText("未找到此物品", 1f);
+                ui_none.TextColor = Color.Gray;
+                panel_items_wp.Append(ui_none);
+            }
         }
 
         public void update_item(int id1, int id2)
@@ -270,15 +362,40 @@ namespace CreativeInventory.CreativeInventory
             for (int i = 0; i < rbs?.Length; ++i) panel_row2_sp_row2.Append(rbs[i]);
         }
 
-        public bool searchItem(string name, string s)//name中有包含s的文本
+        //搜索文本的匹配强度, 越小排越前; -1=没命中
+        public int search_rank(Item item)
         {
-            if (name == null || name.Length < 1) return false;
-            if (s == null || s.Length < 1) return false;
+            if (Search_Text == null || Search_Text.Length < 1) return 0;
+
+            //图格/buff/弹幕: 开了开关才参与, 只在输入是纯数字时按精确相等
+            if (int.TryParse(Search_Text, out int id) && id > 0)
+            {
+                if (panel_row1_sw_tile.GetVal() && match_tile(item, id)) return 0;
+                if (panel_row1_sw_buff.GetVal() && match_buff(item, id)) return 1;
+                if (panel_row1_sw_proj.GetVal() && match_proj(item, id)) return 2;
+            }
+
+            int pos = searchItem(item.type.ToString(), Search_Text);
+            if (pos >= 0) return 3 + pos;
+
+            if (searchItem(item.Name, Search_Text) >= 0) return int.MaxValue;
+
+            return -1;
+        }
+
+        public bool match_tile(Item item, int id) => item.createTile == id || item.createWall == id;
+        public bool match_buff(Item item, int id) => item.buffType == id;
+        public bool match_proj(Item item, int id) => item.shoot == id;
+
+        public int searchItem(string name, string s)//name中有包含s的文本, 返回首次命中的下标, 没命中返回-1
+        {
+            if (name == null || name.Length < 1) return -1;
+            if (s == null || s.Length < 1) return -1;
 
             for (int i = 0; i < name.Length; ++i)
             {
                 bool isEquals = true;
-                if (name.Length - i < s.Length) return false;
+                if (name.Length - i < s.Length) return -1;
 
                 for (int i2 = 0; i2 < s.Length; ++i2)
                 {
@@ -289,10 +406,10 @@ namespace CreativeInventory.CreativeInventory
                     }
                 }
 
-                if (isEquals) return true;
+                if (isEquals) return i;
             }
 
-            return false;
+            return -1;
         }
     }
 }
