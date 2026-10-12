@@ -299,7 +299,7 @@ namespace CreativeInventory.CreativeInventory
                 row.Width.Set(10000, 0);//宽到放不下第二个元素, 物品就被挤到下一行
                 row.Height.Set(32, 0);
 
-                UIText ui_dims = new UIText(dims.Substring(0, dims.Length - 1) + "未找到（或许需要你点击全部列表）", 1.2f);
+                UIText ui_dims = new UIText(dims.Substring(0, dims.Length - 1) + "未找到（或许需要你点击全部列表）", 1f);
                 ui_dims.TextColor = Color.Gray;
                 ui_dims.VAlign = 0.5f;
                 row.Append(ui_dims);

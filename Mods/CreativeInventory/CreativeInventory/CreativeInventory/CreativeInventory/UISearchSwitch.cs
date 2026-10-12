@@ -2,6 +2,7 @@
 using Microsoft.Xna.Framework.Graphics;
 using System;
 using Terraria;
+using Terraria.Audio;
 using Terraria.GameContent.UI.Elements;
 using Terraria.UI;
 
@@ -37,7 +38,11 @@ namespace CreativeInventory.CreativeInventory
             ui_text.VAlign = 0.5f;
             Append(ui_text);
 
-            OnLeftClick += (e, s) => SetVal(!val);
+            OnLeftClick += (e, s) =>
+            {
+                SetVal(!val);
+                SoundEngine.PlaySound(12);
+            };
         }
 
         public void SetVal(bool v)
@@ -54,11 +59,10 @@ namespace CreativeInventory.CreativeInventory
         {
             base.Update(gameTime);
 
-            //每帧走0.2, 5帧滑到位
-            float target = val ? 1 : 0;
+            if (val) anim += (anim + 0.1f) / 3f;
+            else anim -= (1f - anim + 0.1f) / 3f;
 
-            if (anim < target) anim = Math.Min(target, anim + 0.2f);
-            else if (anim > target) anim = Math.Max(target, anim - 0.2f);
+            anim = MathHelper.Clamp(anim, 0, 1);
         }
 
         protected override void DrawSelf(SpriteBatch spriteBatch)
