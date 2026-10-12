@@ -124,6 +124,18 @@ namespace WandsTool.Content
             if (--updateCount > 0) Update(updateCount);
         }
 
+        /// <summary>
+        /// 联机放置前把自己挪到放置点左边 3 格并发 13 号包, 让服务器那边的距离校验能过。
+        /// 服务器仍可能按速度合理性回弹, 这条只能实机验。
+        /// </summary>
+        private static void TeleportForPlace(tile t, Player player)
+        {
+            if (Main.netMode == 0 || gameMain.Wand_TeleportPlace == false) return;
+
+            player.position = new Vector2((t.x - 3) * 16, t.y * 16);
+            NetMessage.SendData(MessageID.PlayerControls, -1, -1, null, player.whoAmI);
+        }
+
         private static void placeTile(tile t, Player player)
         {
             if (canTile(t) == false) return;
@@ -132,28 +144,33 @@ namespace WandsTool.Content
             Item item = FirstItem_Tile(player);
 
             if (item == null) return;
+
+            TeleportForPlace(t, player);
             if (item.consumable && ModConfig.IsConsumablesItem()) item.stack -= 1;
 
-            if (tile?.active() == true)//有方块
+            WithHeldItem(player, item.type, () =>
             {
-                if (tile.type == item.createTile)//相同方块
+                if (tile?.active() == true)//有方块
                 {
-                    SetSlopeFor(t.x, t.y, t.bt);
-                    return;
+                    if (tile.type == item.createTile)//相同方块
+                    {
+                        SetSlopeFor(t.x, t.y, t.bt);
+                        return;
+                    }
+
+                    killTile(new tile(t.x, t.y, true, false, default));
+                    bool v = WorldGen.PlaceTile(t.x, t.y, item.createTile, true, true, player.whoAmI, item.placeStyle);
+
+                    if (v) SetSlopeFor(t.x, t.y, t.bt);
+                }
+                else
+                {
+                    bool v = WorldGen.PlaceTile(t.x, t.y, item.createTile, true, true, player.whoAmI, item.placeStyle);
+                    if (v) SetSlopeFor(t.x, t.y, t.bt);
                 }
 
-                killTile(new tile(t.x, t.y, true, false, default));
-                bool v = WorldGen.PlaceTile(t.x, t.y, item.createTile, true, true, player.whoAmI, item.placeStyle);
-
-                if (v) SetSlopeFor(t.x, t.y, t.bt);
-            }
-            else
-            {
-                bool v = WorldGen.PlaceTile(t.x, t.y, item.createTile, true, true, player.whoAmI, item.placeStyle);
-                if (v) SetSlopeFor(t.x, t.y, t.bt);
-            }
-
-            action.updateData_placeTile(t.x, t.y, item.placeStyle);
+                action.updateData_placeTile(t.x, t.y, item.placeStyle);
+            });
         }
         private static void placeWall(tile t, Player player)
         {
@@ -164,17 +181,22 @@ namespace WandsTool.Content
 
             if (item == null) return;
             if (item.createWall == tile.wall) return;
+
+            TeleportForPlace(t, player);
             if (item.consumable && ModConfig.IsConsumablesItem()) item.stack -= 1;
 
-            if (tile?.wall > 0)
+            WithHeldItem(player, item.type, () =>
             {
-                WorldGen.KillWall(t.x, t.y);
-            }
+                if (tile?.wall > 0)
+                {
+                    WorldGen.KillWall(t.x, t.y);
+                }
 
-            WorldGen.PlaceWall(t.x, t.y, item.createWall);
-            WorldGen.SquareWallFrame(t.x, t.y, false);
+                WorldGen.PlaceWall(t.x, t.y, item.createWall);
+                WorldGen.SquareWallFrame(t.x, t.y, false);
 
-            action.updateData_placeWall(t.x, t.y);
+                action.updateData_placeWall(t.x, t.y);
+            });
         }
 
         private static void killTile(tile t)
@@ -403,6 +425,50 @@ namespace WandsTool.Content
             return t.x >= 0 && t.x < Main.tile.GetLength(0) && t.y >= 0 && t.y < Main.tile.GetLength(1);
         }
 
+        /// <summary>
+        /// 联机时把"魔杖所在那一格"临时同步成指定物品再执行放置, 做完立刻还原。
+        /// 只发包, 本地 selectedItem / HeldItem 一律不动; 中途换手持格也不会改到别的格子。
+        /// </summary>
+        private static void WithHeldItem(Player player, int itemType, Action place)
+        {
+            if (Main.netMode != 1)
+            {
+                place();
+                return;
+            }
+
+            int wandSlot = WandSlot(player);
+
+            if (wandSlot < 0)
+            {
+                place();
+                return;
+            }
+
+            //收包端用 PlayerItemSlotID.SlotReference 解析, 必须带段基址, 裸格子索引会落到别的槽位段
+            int slot = PlayerItemSlotID.Inventory0 + wandSlot;
+
+            ClientSendToServer.SendSyncEquipment(itemType, slot, player.whoAmI);
+
+            place();
+
+            //还原: 不然服务器那一格就永久变成放置用的物品了
+            NetMessage.TrySendData(MessageID.SyncEquipment, -1, -1, null, player.whoAmI, slot);
+        }
+
+        /// <summary>魔杖物品在背包里的格子, 找不到返回 -1。</summary>
+        private static int WandSlot(Player player)
+        {
+            if (player?.inventory == null) return -1;
+
+            for (int i = 0; i < player.inventory.Length; ++i)
+            {
+                if (player.inventory[i].type == WandItem.WandItemRegist.ItemId) return i;
+            }
+
+            return -1;
+        }
+
         private static Item FirstItem_Tile(Player player)
         {
             return FirstItem_TileOrWall(player, true);
@@ -413,37 +479,54 @@ namespace WandsTool.Content
             return FirstItem_TileOrWall(player, false);
         }
 
-        private static Item FirstItem_TileOrWall(Player player, bool isTile)
+        private static bool CanPlace(Item item, bool isTile)
         {
-            Item item = player.HeldItem;
+            if (isTile) return item.createTile >= 0;
+            return item.createWall > 0;
+        }
 
-            if (HasItem(item))
-            {
-                if (isTile)
-                {
-                    if (item.createTile >= 0) return item;
-                }
-                else
-                {
-                    if (item.createWall > 0) return item;
-                }
-            }
-
-            if (player?.inventory == null) return null;
+        /// <summary>背包里找玩家选中的那种物品, 且当前类别真能用它。</summary>
+        private static Item FindSelected(Player player, bool isTile)
+        {
+            if (gameMain.Wand_SelectItemType <= 0 || player?.inventory == null) return null;
 
             for (int i = 0; i < player.inventory.Length; ++i)
             {
-                item = player.inventory[i];
-                if (HasItem(item) != true) continue;
+                Item item = player.inventory[i];
 
-                if (isTile)
-                {
-                    if (item.createTile >= 0) return item;
-                }
-                else
-                {
-                    if (item.createWall > 0) return item;
-                }
+                if (item.type != gameMain.Wand_SelectItemType) continue;
+                if (HasItem(item) == false) continue;
+                if (CanPlace(item, isTile) == false) continue;
+
+                return item;
+            }
+
+            return null;
+        }
+
+        private static Item FirstItem_TileOrWall(Player player, bool isTile)
+        {
+            //1. 玩家在选择窗口里选中的物品
+            Item selected = FindSelected(player, isTile);
+            if (selected != null) return selected;
+
+            //2. 手持
+            Item item = player.HeldItem;
+
+            if (HasItem(item) && CanPlace(item, isTile)) return item;
+
+            if (player?.inventory == null) return null;
+
+            //3. 背包里第一个能放的, 并把它记成选中项(默认选第一个)
+            for (int i = 0; i < player.inventory.Length; ++i)
+            {
+                item = player.inventory[i];
+
+                if (HasItem(item) == false) continue;
+                if (CanPlace(item, isTile) == false) continue;
+
+                gameMain.Wand_SelectItemType = item.type;
+                return item;
             }
 
             return null;

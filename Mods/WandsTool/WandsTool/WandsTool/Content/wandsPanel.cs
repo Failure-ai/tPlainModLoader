@@ -16,18 +16,17 @@ namespace WandsTool.Content
         private Asset<Texture2D> back_img1 = null;
         private Asset<Texture2D> back_img2 = null;
         private UIImage ico = null;
-        private string mouseText = null;
+        public string mouseText = null;
         public bool isBack = false;
 
 
-        public wandsPanel_btn1(Texture2D img1, string mouseText)
+        public wandsPanel_btn1(Texture2D img1, string mouseText, string badge = null)
         {
             back_img1 = Main.Assets.Request<Texture2D>("Images/UI/Wires_0", AssetRequestMode.ImmediateLoad);
             back_img2 = Main.Assets.Request<Texture2D>("Images/UI/Wires_1", AssetRequestMode.ImmediateLoad);
             this.mouseText = mouseText;
 
             back = new UIImage(back_img1);
-            ico = new UIImage(img1);
 
             Width.Set(40, 0);
             Height.Set(Width.Pixels, 0);
@@ -35,19 +34,35 @@ namespace WandsTool.Content
             back.Width.Set(Width.Pixels, 0);
             back.Height.Set(Height.Pixels, 0);
 
-            ico.Width.Set(16, 0);
-            ico.Height.Set(16, 0);
-            ico.HAlign = 0.5f;
-            ico.VAlign = 0.5f;
-            ico.ScaleToFit = true;
+            //img1 为 null 时只画角标文字(速度 -/+ 没有合适的原版图标)
+            if (img1 != null)
+            {
+                ico = new UIImage(img1);
+
+                ico.Width.Set(16, 0);
+                ico.Height.Set(16, 0);
+                ico.HAlign = 0.5f;
+                ico.VAlign = 0.5f;
+                ico.ScaleToFit = true;
+            }
 
             OnLeftClick += (e, s) => SoundEngine.PlaySound(SoundID.MenuTick);
 
             Append(back);
-            Append(ico);
+
+            if (ico != null) Append(ico);
+
+            //角标文字, 给没有现成图标的按钮(速度+/-)用
+            if (badge != null)
+            {
+                UIText text = new UIText(badge, 1.2f);
+                text.HAlign = 0.5f;
+                text.VAlign = 0.5f;
+                Append(text);
+            }
         }
-        public wandsPanel_btn1(string img1, string mouseText) :
-            this(Main.Assets.Request<Texture2D>(img1, AssetRequestMode.ImmediateLoad)?.Value, mouseText)
+        public wandsPanel_btn1(string img1, string mouseText, string badge = null) :
+            this(Main.Assets.Request<Texture2D>(img1, AssetRequestMode.ImmediateLoad)?.Value, mouseText, badge)
         {
 
         }
@@ -74,6 +89,8 @@ namespace WandsTool.Content
 
         public void SetIco(Texture2D img1)
         {
+            if (ico == null) return;
+
             ico.SetImage(img1);
         }
 
@@ -90,6 +107,7 @@ namespace WandsTool.Content
         protected UIState btns_2 = null;
         protected UIState btns_3 = null;
         protected UIState btns_4 = null;
+        protected UIState btns_5 = null;
         protected wandsPanel_btn1 btn1 = null;//破坏放置
         protected wandsPanel_btn1 btn2 = null;//方块墙壁
         protected wandsPanel_btn1 btn2_tile = null;
@@ -110,7 +128,19 @@ namespace WandsTool.Content
         protected wandsPanel_btn1 btn4_SlopeUpRight = null;
         protected wandsPanel_btn1 btn4_SlopeDownLeft = null;
         protected wandsPanel_btn1 btn4_SlopeDownRight = null;
+        protected wandsPanel_btn1 btn5_more = null;//其他设置
+        protected wandsPanel_btn1 btn5_speed_minus = null;//速度-
+        protected wandsPanel_btn1 btn5_speed_plus = null;//速度+
+        protected wandsPanel_btn1 btn5_teleport = null;//联机传送放置
+        protected wandsPanel_btn1 btn6_item = null;//物品选择
+        protected wandsItemPanel itemPanel = null;
+
+        /// <summary>给 feces 在关面板时一起关掉选择窗口用。</summary>
+        public wandsItemPanel ItemPanel => itemPanel;
         public bool isReset = true;
+
+        /// <summary>速度上限, 每帧处理的格子数。</summary>
+        public const int SpeedMax = 200;
 
 
         public wandsPanel()
@@ -120,6 +150,7 @@ namespace WandsTool.Content
             btns_2 = new UIState();
             btns_3 = new UIState();
             btns_4 = new UIState();
+            btns_5 = new UIState();
             btn1 = new wandsPanel_btn1("Images/Item_1", "破坏放置");
             btn2 = new wandsPanel_btn1("Images/Item_2", "方块墙壁");
             btn2_tile = new wandsPanel_btn1("Images/Item_2", "方块");
@@ -140,6 +171,22 @@ namespace WandsTool.Content
             btn4_SlopeUpRight = new wandsPanel_btn1(Resources.Images_SlopeUpRight, null);
             btn4_SlopeDownLeft = new wandsPanel_btn1(Resources.Images_SlopeDownLeft, null);
             btn4_SlopeDownRight = new wandsPanel_btn1(Resources.Images_SlopeDownRight, null);
+            btn5_more = new wandsPanel_btn1((Texture2D)null, "其他设置", "...");
+            btn5_speed_minus = new wandsPanel_btn1((Texture2D)null, null, "-");
+            btn5_speed_plus = new wandsPanel_btn1((Texture2D)null, null, "+");
+            btn5_teleport = new wandsPanel_btn1("Images/Item_2222", "联机传送放置");
+            btn6_item = new wandsPanel_btn1(Resources.Images_WandCreate, "物品选择");
+            itemPanel = new wandsItemPanel();
+
+            btn5_more.OnLeftClick += (e, s) => onClick(4);
+            btn5_speed_minus.OnLeftClick += (e, s) => SetSpeed(gameMain.Wand_UpdateCount + SpeedStep(-1));
+            btn5_speed_plus.OnLeftClick += (e, s) => SetSpeed(gameMain.Wand_UpdateCount + SpeedStep(1));
+            btn5_teleport.OnLeftClick += (e, s) => gameMain.Wand_TeleportPlace = !gameMain.Wand_TeleportPlace;
+            btn6_item.OnLeftClick += (e, s) =>
+            {
+                if (itemPanel.isOpen) itemPanel.Close();
+                else itemPanel.Open();
+            };
 
             btn1.OnLeftClick += (e, s) => onClick(0);
             btn2.OnLeftClick += (e, s) => onClick(1);
@@ -174,6 +221,9 @@ namespace WandsTool.Content
             container.Append(btn2);
             container.Append(btn3);
             container.Append(btn4);
+            container.Append(btn5_more);
+            container.Append(btn6_item);
+            container.Append(itemPanel);
             btns_2.Append(btn2_tile);
             btns_2.Append(btn2_wall);
             btns_2.Append(btn2_wire_red);
@@ -190,6 +240,9 @@ namespace WandsTool.Content
             btns_4.Append(btn4_SlopeUpRight);
             btns_4.Append(btn4_SlopeDownLeft);
             btns_4.Append(btn4_SlopeDownRight);
+            btns_5.Append(btn5_speed_minus);
+            btns_5.Append(btn5_speed_plus);
+            btns_5.Append(btn5_teleport);
         }
 
 
@@ -238,6 +291,28 @@ namespace WandsTool.Content
             btn4_SlopeUpRight.isBack = gameMain.Wand_BlockType == WandAction.BlockType.SlopeUpRight;
             btn4_SlopeDownLeft.isBack = gameMain.Wand_BlockType == WandAction.BlockType.SlopeDownLeft;
             btn4_SlopeDownRight.isBack = gameMain.Wand_BlockType == WandAction.BlockType.SlopeDownRight;
+
+            btn5_teleport.isBack = gameMain.Wand_TeleportPlace;
+
+            btn5_speed_minus.mouseText = $"速度-  当前每帧 {gameMain.Wand_UpdateCount} 格";
+            btn5_speed_plus.mouseText = $"速度+  当前每帧 {gameMain.Wand_UpdateCount} 格 (上限 {SpeedMax}, 按 Ctrl 每次 5)";
+        }
+
+        /// <summary>按着 Ctrl 时步进 5。</summary>
+        private static int SpeedStep(int step)
+        {
+            if (Main.keyState.IsKeyDown(Microsoft.Xna.Framework.Input.Keys.LeftControl) ||
+                Main.keyState.IsKeyDown(Microsoft.Xna.Framework.Input.Keys.RightControl)) step *= 5;
+
+            return step;
+        }
+
+        private static void SetSpeed(int v)
+        {
+            if (v < 1) v = 1;
+            if (v > SpeedMax) v = SpeedMax;
+
+            gameMain.Wand_UpdateCount = v;
         }
 
         public void Reset()
@@ -255,6 +330,25 @@ namespace WandsTool.Content
 
             btn4.Left.Set(Main.mouseX + margin, 0);
             btn4.Top.Set(Main.mouseY + margin, 0);
+
+            //第 5 个主按钮放正上方, 紧贴 btn1/btn2 那排, 点开是下面那一横排
+            btn5_more.Left.Set(Main.mouseX - btn5_more.Width.Pixels / 2, 0);
+            btn5_more.Top.Set(Main.mouseY - btn1.Height.Pixels * 2 - margin, 0);
+
+            //物品选择按钮放正下方, 和上方的"..."对称(下方第一格是速度横排)
+            btn6_item.Left.Set(Main.mouseX - btn6_item.Width.Pixels / 2, 0);
+            btn6_item.Top.Set(Main.mouseY + btn3.Height.Pixels * 2 + margin * 3, 0);
+
+            //速度- / 速度+ / 传送 排一横排, 放在 btn3/btn4 下面
+            float pitch = btn5_speed_minus.Width.Pixels + margin;
+            float row = Main.mouseY + margin + btn3.Height.Pixels + margin;
+
+            btn5_speed_minus.Left.Set(Main.mouseX - pitch * 1.5f, 0);
+            btn5_speed_minus.Top.Set(row, 0);
+            btn5_speed_plus.Left.Set(Main.mouseX - pitch / 2, 0);
+            btn5_speed_plus.Top.Set(row, 0);
+            btn5_teleport.Left.Set(Main.mouseX + pitch / 2, 0);
+            btn5_teleport.Top.Set(row, 0);
 
             Action<int, int, Terraria.UI.UIElement> action = (c, i, ui) =>
             {
@@ -296,6 +390,7 @@ namespace WandsTool.Content
                 case 1: btns.Append(btns_2); break;
                 case 2: btns.Append(btns_3); break;
                 case 3: btns.Append(btns_4); break;
+                case 4: btns.Append(btns_5); break;
                 default: break;
             }
         }

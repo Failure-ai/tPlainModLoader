@@ -14,9 +14,19 @@ namespace WandsTool.ModLinkage
     {
         public static bool IsLinkage = true;
 
+        /// <summary>加载时:记下模组目录, 魔杖贴图要从那里读。</summary>
+        public override void Load(tContentPatch.ModLoad.ModObject mo)
+        {
+            WandItem.WandItemRegist.ModPath = mo.modPath;
+        }
+
         public override void Loaded()
         {
             if (Main.dedServ) return;
+
+            //物品注册和 QuickButton 联动无关, 必须排在下面的提前 return 之前
+            WandItem.WandItemRegist.Load();
+
             if (IsLinkage == false) return;
 
             System.Collections.Generic.List<tContentPatch.ModLoad.ModObject> mos = ContentPatch.GetModObjects();
@@ -45,7 +55,16 @@ namespace WandsTool.ModLinkage
             {
                 SoundEngine.PlaySound(12);
 
-                gameMain.Wand_isEnable = !gameMain.Wand_isEnable;
+                if (gameMain.Wand_isEnable)
+                {
+                    WandItem.WandItemRegist.RemoveAllFromInventory();
+                    gameMain.Wand_isEnable = false;
+                }
+                else
+                {
+                    WandItem.WandItemRegist.GiveToInventory();
+                    gameMain.Wand_isEnable = true;
+                }
             };
 
             mi.Invoke(null, new object[] { "WandsTool.SwitchOpenOrClose", ui_img });

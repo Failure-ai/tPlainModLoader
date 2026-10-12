@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using Terraria;
+using WandsTool.WandItem;
 
 namespace WandsTool.Content
 {
@@ -48,15 +49,17 @@ namespace WandsTool.Content
                 return;
             }
 
-            if (Main.mouseLeft == true && Main.mouseLeftRelease == true && Main.mouseRight == false && selecting == false)
+            //悬停在任何界面上(背包/物品栏/魔杖面板自己)时不开始选区, 和原版"丢出物品"的判定一致
+            if (Main.mouseLeft == true && Main.mouseLeftRelease == true && Main.mouseRight == false && selecting == false
+                && WandItemRegist.IsHeldByLocalPlayer() && Main.LocalPlayer.mouseInterface == false)
             {
-                if (Main.LocalPlayer.mouseInterface == true) return;
-
                 selecting = true;
                 position1 = Main.MouseWorld;
             }
 
             if (selecting == false) return;
+
+            Update_UseAnimation();
 
             position2 = Main.MouseWorld;
 
@@ -74,7 +77,10 @@ namespace WandsTool.Content
 
                 bool wireLine = shapes_s == Shapes.rectangle;
 
-                if (gameMain.Wand_Tile || gameMain.Wand_Wall)
+                //换出手就丢弃这次选区, 不创建任务(收尾照常走)
+                bool canCreate = WandItemRegist.IsHeldByLocalPlayer();
+
+                if (canCreate && (gameMain.Wand_Tile || gameMain.Wand_Wall))
                 {
                     if (gameMain.Wand_isPlace)
                     {
@@ -86,7 +92,7 @@ namespace WandsTool.Content
                     }
                 }
 
-                if (wire)
+                if (canCreate && wire)
                 {
                     if (wireLine)
                     {
@@ -111,6 +117,28 @@ namespace WandsTool.Content
 
                 shapes = null;
             }
+        }
+
+        /// <summary>
+        /// 按住左键期间每帧把使用动画顶满, 否则人物只是站着(选区是这里自己轮询鼠标驱动的, 不走原版物品使用流程)。
+        /// </summary>
+        private static void Update_UseAnimation()
+        {
+            Terraria.Player player = Main.LocalPlayer;
+            Terraria.Item held = player.HeldItem;
+
+            if (held.type != WandItemRegist.ItemId) return;
+
+            player.itemAnimation = held.useAnimation;
+            player.itemTime = held.useTime;
+
+            //和原版 ItemCheck_Shoot 同一套算法, 让法杖指向鼠标
+            Vector2 to = Main.MouseWorld - player.MountedCenter;
+
+            //原版靠 ItemCheck_Shoot 里的 ChangeDir 翻面, 我们不走那条路, 得自己跟着鼠标转向
+            player.ChangeDir(to.X >= 0 ? 1 : -1);
+
+            player.itemRotation = (float)Math.Atan2(to.Y * player.direction, to.X * player.direction) - player.fullRotation;
         }
 
         private static void Update_Shapes()
